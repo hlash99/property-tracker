@@ -1,0 +1,5 @@
+.subjects.json
+cache/
+__pycache__/
+*.pyc
+.venv/

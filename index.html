@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Property Tracker</title>
+<style>
+  :root{
+    --bg:#ffffff;--surface:#f7f8fa;--line:#e6e8ec;--ink:#1a1d21;--muted:#6b7280;--accent:#185FA5;
+    --grid:#e9e9e6;--shadow:0 1px 3px rgba(0,0,0,.06);
+    --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--bench:#8a8f98;--good:#137a4f;--bad:#b42318;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){--bg:#14161a;--surface:#1c1f25;--line:#2a2e36;--ink:#e9ecf1;--muted:#9aa3af;
+      --grid:#2c2c2a;--shadow:none;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--bench:#7d838c;--good:#3fb47a;--bad:#f07167;}
+  }
+  :root[data-theme="dark"]{--bg:#14161a;--surface:#1c1f25;--line:#2a2e36;--ink:#e9ecf1;--muted:#9aa3af;
+    --grid:#2c2c2a;--shadow:none;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--bench:#7d838c;--good:#3fb47a;--bad:#f07167;}
+  *{box-sizing:border-box}
+  html,body{background:var(--bg)}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 18px 60px}
+  header.top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line);
+    padding:12px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  header.top h1{font-size:16px;margin:0;font-weight:600}
+  .crumb,.upd{font-size:12.5px;color:var(--muted)} .crumb a{color:inherit}
+  h2{font-size:20px;margin:36px 0 4px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  h3{font-size:15px;margin:22px 0 2px;font-weight:600}
+  p.sub{color:var(--muted);margin:4px 0 0;font-size:14px}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 4px;position:sticky;top:49px;z-index:9;background:var(--bg);padding:8px 0}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface)}
+  .seg button{border:0;background:transparent;color:var(--muted);padding:7px 12px;font-size:13px;cursor:pointer;font-weight:500;font-family:inherit}
+  .seg button.on{background:var(--accent);color:#fff}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:14px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow);min-width:0}
+  .kpi .l{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .kpi .l i{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+  .kpi .v{font-size:27px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px;line-height:1.2}
+  .kpi .r{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .kpi .g{font-size:14px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums}
+  .kpi .x{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+  .up{color:var(--good)} .dn{color:var(--bad)}
+  .chartbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px;box-shadow:var(--shadow);min-width:0}
+  .chartwrap{position:relative;width:100%;min-width:0;height:330px}
+  .chartwrap.short{height:220px}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px;font-size:12px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend .sw{width:14px;height:3px;border-radius:2px;flex:none}
+  .legend .bd{width:14px;height:10px;border-radius:3px;flex:none;opacity:.35}
+  .legend .dt{width:8px;height:8px;border-radius:50%;flex:none}
+  .legend .dm{width:9px;height:9px;transform:rotate(45deg);flex:none;border:2px solid var(--ink);background:var(--bg)}
+  .tnote{font-size:11.5px;color:var(--muted);margin:8px 2px 0;line-height:1.55}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .tablescroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-top:10px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:6px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  td.l,th.l{text-align:left}
+  thead th{background:var(--surface);font-weight:600}
+  td{font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;font-size:10.5px;border:1px solid var(--line);border-radius:10px;padding:0 6px;margin-left:4px;color:var(--muted)}
+  .facts{font-size:13px;color:var(--muted);margin-top:2px}
+  details.model{margin-top:10px;font-size:12.5px;color:var(--muted)}
+  details.model summary{cursor:pointer;color:var(--accent)}
+  ul.notes{font-size:13.5px;padding-left:20px;margin:8px 0 0} ul.notes li{margin:5px 0}
+  .warn{font-size:12px;color:var(--bad)}
+  footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+  @media(max-width:560px){.wrap{padding:0 16px 56px}h2{font-size:18px}.chartwrap{height:270px}.kpi .v{font-size:24px}
+    .controls{top:0;position:static}.seg button{padding:6px 9px;font-size:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="crumb"><a href="https://hlash99.github.io/">&larr; hlash99 dashboard</a></div>
+  <h1>🏠 Property Tracker</h1>
+  <span class="upd" id="updated">loading…</span>
+</header>
+<div class="wrap">
+  <h2>What the three properties are worth, from real sales</h2>
+  <p class="sub">Each US home is valued by a local price model fitted to ~10 years of actual <b>sold</b> comps around it (not Zestimate or Redfin Estimate), pinned to its own purchase price and appraisal. Lisbon uses Statistics Portugal's official prices of homes actually sold in the parish. Every chart starts on the purchase date. Refreshed twice a week on GitHub's servers.</p>
+
+  <div class="controls" id="controls">
+    <div class="seg" data-k="basis"><button data-v="nominal">Nominal</button><button data-v="real" class="on">Inflation-adjusted</button></div>
+    <div class="seg" data-k="metric"><button data-v="total">Total %</button><button data-v="cagr" class="on">CAGR %/yr</button></div>
+    <div class="seg" data-k="range"><button data-v="all" class="on">Since purchase</button><button data-v="5">5 yr</button><button data-v="1">1 yr</button></div>
+    <div class="seg" data-k="bench"><button data-v="none" class="on">No benchmark</button><button data-v="S&amp;P 500">vs S&amp;P 500</button><button data-v="AAPL">vs AAPL</button></div>
+    <div class="seg" data-k="ccy" id="ccySeg" title="Lisbon flat currency"><button data-v="EUR" class="on">Lisbon €</button><button data-v="USD">Lisbon $</button></div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <h2>Combined value</h2>
+  <p class="sub" id="portSub">All three in US dollars (Lisbon at each month's EUR→USD rate).</p>
+  <div class="chartbox">
+    <div class="legend" id="portLegend"></div>
+    <div class="chartwrap"><canvas id="port" role="img" aria-label="Stacked area chart of the combined value of the three properties over time"></canvas></div>
+  </div>
+
+  <div id="props"></div>
+
+  <h2>How it works</h2>
+  <ul class="notes" id="method"></ul>
+  <footer>Source data: realtor.com sold records (via HomeHarvest) + Redfin's sold-homes export, Zillow ZHVI, FRED (CPI, HICP, EUR/USD), Statistics Portugal (INE), benchmarks from the car-value-tracker page. Street addresses are deliberately not published. Not an appraisal.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const state={basis:"real",metric:"cagr",range:"all",bench:"none",ccy:"EUR"};
+try{Object.assign(state,JSON.parse(localStorage.getItem("pt_state")||"{}"));}catch(e){}
+let D=null; const charts={};
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const COLOR=["--s1","--s2","--s3"];
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const ts=m=>Date.UTC(+m.slice(0,4),+m.slice(5,7)-1,m.length>7?+m.slice(8,10):15);
+const ym=t=>{const d=new Date(t);return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0");};
+const mlabel=t=>{const d=new Date(t);return MON[d.getUTCMonth()]+" "+d.getUTCFullYear();};
+const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+
+/* ---------- money + conversions ---------- */
+function lastAtOrBefore(map,m){ if(!map) return null; if(map[m]!=null) return map[m];
+  const ks=Object.keys(map).sort(); let v=null; for(const k of ks){ if(k<=m) v=map[k]; else break; } return v!=null?v:map[ks[0]]; }
+const latestKey=map=>Object.keys(map).sort().slice(-1)[0];
+function dispCcy(p){ return p.ccy==="EUR" && state.ccy==="USD" ? "USD" : p.ccy; }
+function deflator(ccy){ return ccy==="EUR" ? D.ref.hicp_pt : D.ref.cpi_us; }
+/* value v (in property's native ccy) at month m -> displayed ccy, real or nominal (in latest prices) */
+function conv(p,v,m){
+  let c=p.ccy;
+  if(c==="EUR" && state.ccy==="USD"){ v*=lastAtOrBefore(D.ref.eurusd,m); c="USD"; }
+  if(state.basis==="real"){ const dfl=deflator(c); v*=dfl[latestKey(dfl)]/lastAtOrBefore(dfl,m); }
+  return v;
+}
+function toUSD(p,v,m){ return p.ccy==="EUR" ? v*lastAtOrBefore(D.ref.eurusd,m) : v; }
+function realUSD(v,m){ if(state.basis!=="real") return v; const c=D.ref.cpi_us; return v*c[latestKey(c)]/lastAtOrBefore(c,m); }
+const sym=c=>c==="EUR"?"€":"$";
+function money(v,c,full){ const s=sym(c); if(v==null||!isFinite(v)) return "—";
+  if(full) return s+Math.round(v).toLocaleString();
+  return Math.abs(v)>=1e6 ? s+(v/1e6).toFixed(2)+"M" : s+Math.round(v/1e3)+"k"; }
+const pct=(v,d=1)=>v==null||!isFinite(v)?"—":(v>=0?"+":"")+v.toFixed(d)+"%";
+
+/* ---------- window + returns ---------- */
+function windowStart(p){
+  const ms=p.series.m; if(state.range==="all") return ms[0];
+  const end=ms[ms.length-1], y=+end.slice(0,4)-(+state.range), s=y+end.slice(4);
+  return s<ms[0]?ms[0]:s;
+}
+function ret(v0,v1,m0,m1){ const yrs=(ts(m1)-ts(m0))/(365.25*864e5); const r=v1/v0;
+  return {total:(r-1)*100, cagr:yrs>0.05?(Math.pow(r,1/yrs)-1)*100:null, yrs}; }
+function benchVal(name,m){ const s=D.ref.bench&&D.ref.bench[name]; return s?lastAtOrBefore(s,m):null; }
+/* benchmark: the same money (in display ccy) put into the index at window start */
+function benchSeries(p,m0,months){
+  if(state.bench==="none") return null;
+  const b0=benchVal(state.bench,m0), v0=p.series.v[p.series.m.indexOf(m0)];
+  const usd0=toUSD(p,v0,m0);
+  return months.map(m=>{ let usd=usd0*benchVal(state.bench,m)/b0; let v=usd;
+    if(dispCcy(p)==="EUR") v=usd/lastAtOrBefore(D.ref.eurusd,m);
+    if(state.basis==="real"){ const dfl=deflator(dispCcy(p)); v*=dfl[latestKey(dfl)]/lastAtOrBefore(dfl,m); }
+    return v; });
+}
+function metricText(r){ return state.metric==="cagr" ? (r.cagr==null?"—":pct(r.cagr)+"/yr") : pct(r.total,0); }
+function altText(r){ return state.metric==="cagr" ? pct(r.total,0)+" total" : (r.cagr==null?"":pct(r.cagr)+"/yr"); }
+
+/* ---------- chart helpers ---------- */
+function baseOpts(fmtY){
+  const ink=css("--muted"), grid=css("--grid");
+  return {responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"nearest",axis:"x",intersect:false},
+    plugins:{legend:{display:false},tooltip:{backgroundColor:css("--surface"),titleColor:css("--ink"),bodyColor:css("--ink"),
+      borderColor:css("--line"),borderWidth:1,padding:9,boxPadding:4,usePointStyle:true,
+      callbacks:{title:it=>it.length?mlabel(it[0].parsed.x):""}}},
+    scales:{x:{type:"linear",grid:{display:false},border:{color:grid},afterBuildTicks:timeTicks,
+        ticks:{color:ink,maxRotation:0,autoSkip:false,callback:v=>tickLabel(v)}},
+      y:{grid:{color:grid},border:{display:false},ticks:{color:ink,maxTicksLimit:6,callback:fmtY}}}};
+}
+/* clean time ticks: Jan 1 every N years, or quarter starts on short spans */
+let TICKSPAN=0;
+function timeTicks(sc){
+  const a=sc.min,b=sc.max, yrs=(b-a)/(365.25*864e5); TICKSPAN=yrs; const out=[];
+  if(yrs>2.5){ const step=Math.max(1,Math.ceil(yrs/7)); const y0=new Date(a).getUTCFullYear()+1;
+    for(let y=y0;Date.UTC(y,0,1)<=b;y+=step) out.push({value:Date.UTC(y,0,1)}); }
+  else { const d=new Date(a); let y=d.getUTCFullYear(), m=Math.ceil((d.getUTCMonth()+0.01)/3)*3;
+    const step=yrs>1.2?6:3;
+    for(;Date.UTC(y,m,1)<=b;m+=step){ if(m>=12){y+=Math.floor(m/12);m%=12;} if(Date.UTC(y,m,1)<=b) out.push({value:Date.UTC(y,m,1)}); } }
+  sc.ticks=out;
+}
+function tickLabel(v){ const d=new Date(v); return TICKSPAN>2.5?String(d.getUTCFullYear()):MON[d.getUTCMonth()]+" '"+String(d.getUTCFullYear()).slice(2); }
+function mk(id,cfg){ if(charts[id]) charts[id].destroy(); charts[id]=new Chart(document.getElementById(id),cfg); return charts[id]; }
+
+/* ---------- KPI cards ---------- */
+function renderKPIs(){
+  const out=[]; let totUSD=0, tot0=0, totMonths=[];
+  D.properties.forEach((p,i)=>{
+    const S=p.series, n=S.m.length-1, mEnd=S.m[n], m0=windowStart(p), i0=S.m.indexOf(m0), c=dispCcy(p);
+    const v=conv(p,S.v[n],mEnd), lo=conv(p,S.lo[n],mEnd), hi=conv(p,S.hi[n],mEnd);
+    const r=ret(conv(p,S.v[i0],m0), v, m0, mEnd);
+    let bt="";
+    if(state.bench!=="none"){ const b=benchSeries(p,m0,[m0,mEnd]); const rb=ret(b[0],b[1],m0,mEnd);
+      const diff=state.metric==="cagr"?(r.cagr-rb.cagr):(r.total-rb.total);
+      bt=`<div class="x">${esc(state.bench)} same dates: ${metricText(rb)} → home ${diff>=0?"beat":"lagged"} it by <b class="${diff>=0?"up":"dn"}">${Math.abs(diff).toFixed(1)}${state.metric==="cagr"?" pts/yr":" pts"}</b></div>`; }
+    const xs=[]; (p.checks||[]).forEach(k=>xs.push(`${esc(k.label.replace(/ \(.*/,""))} ${money(conv(p,k.value,k.date.slice(0,7)),c)}`));
+    if(p.realtor_estimate) xs.push(`realtor.com ${money(conv(p,p.realtor_estimate,mEnd),c)}`);
+    const since=state.range==="all"?"since purchase "+mlabel(ts(S.m[0])):"last "+state.range+" yr";
+    out.push(`<div class="kpi"><div class="l"><i style="background:var(${COLOR[i]})"></i>${esc(p.icon)} ${esc(p.name)}</div>
+      <div class="v">${money(v,c)}</div><div class="r">80% range ${money(lo,c)} – ${money(hi,c)}</div>
+      <div class="g ${r.total>=0?"up":"dn"}">${metricText(r)} <span class="r" style="font-weight:400">${since} · ${altText(r)}</span></div>
+      ${bt}<div class="x">Cross-checks: ${xs.join(" · ")||"—"}</div></div>`);
+  });
+  // portfolio card (USD)
+  const now=D.properties.map(p=>{const S=p.series,n=S.m.length-1;return realUSD(toUSD(p,S.v[n],S.m[n]),S.m[n]);}).reduce((a,b)=>a+b,0);
+  const cost=D.properties.map(p=>realUSD(toUSD(p,p.purchase.price,p.series.m[0]),p.series.m[0])).reduce((a,b)=>a+b,0);
+  out.unshift(`<div class="kpi"><div class="l">All three · USD${state.basis==="real"?" · today's dollars":""}</div>
+    <div class="v">${money(now,"USD")}</div><div class="r">paid ${money(cost,"USD")}${state.basis==="real"?" (in today's dollars)":""}</div>
+    <div class="g ${now>=cost?"up":"dn"}">${pct((now/cost-1)*100,0)} on purchase prices</div>
+    <div class="x">${state.basis==="real"?"Inflation-adjusted: US CPI for $, Portugal HICP for €.":"Nominal dollars/euros."}</div></div>`);
+  $("#kpis").innerHTML=out.join("");
+}
+
+/* ---------- portfolio stacked area ---------- */
+function renderPortfolio(){
+  const all=[...new Set(D.properties.flatMap(p=>p.series.m))].sort();
+  const ds=D.properties.map((p,i)=>({label:p.name,fill:i===0?"origin":"-1",borderColor:css(COLOR[i]),backgroundColor:css(COLOR[i])+"55",
+    borderWidth:1.5,pointRadius:0,tension:.15,
+    data:all.map(m=>{const j=p.series.m.indexOf(m);return {x:ts(m),y:j<0?0:realUSD(toUSD(p,p.series.v[j],m),m)};})}));
+  const o=baseOpts(v=>"$"+(v/1e6).toFixed(1)+"M"); o.scales.y.stacked=true; o.scales.y.min=0;
+  o.scales.x.min=ts(all[0]); o.scales.x.max=ts(all[all.length-1]);
+  o.plugins.tooltip.callbacks.label=c=>` ${c.dataset.label}: ${money(c.parsed.y,"USD")}`;
+  o.plugins.tooltip.callbacks.footer=it=>"Total "+money(it.reduce((a,c)=>a+c.parsed.y,0),"USD");
+  mk("port",{type:"line",data:{datasets:ds},options:o});
+  $("#portLegend").innerHTML=D.properties.map((p,i)=>`<span><i class="bd" style="background:var(${COLOR[i]});opacity:.6"></i>${esc(p.name)}</span>`).join("");
+  $("#portSub").textContent="All three in US dollars"+(state.basis==="real"?", inflation-adjusted to today's dollars (US CPI)":"")+"; Lisbon at each month's EUR→USD rate. Each band starts on its purchase date.";
+}
+
+/* ---------- per-property ---------- */
+function propHTML(p,i){
+  const f=p.facts||{}, fx=[f.type,f.beds!=null?f.beds+" bd":"",f.baths!=null?f.baths+" ba":"",f.sqft?f.sqft.toLocaleString()+" sq ft":"",
+    f.sqm?f.sqm+" m²":"",f.lot?f.lot.toLocaleString()+" sq ft lot":"",f.year_built?"built "+f.year_built:"",f.parking||"",f.view?f.view+" view":""].filter(Boolean).join(" · ");
+  return `<section id="sec-${p.key}">
+    <h2>${esc(p.icon)} ${esc(p.name)} <span class="pill">${esc(p.area)}</span></h2>
+    <div class="facts">${esc(fx)} · bought ${mlabel(ts(p.purchase.date))} for ${money(p.purchase.price,p.ccy,true)}</div>
+    <div class="chartbox"><div class="legend" id="lg-${p.key}"></div>
+      <div class="chartwrap"><canvas id="ch-${p.key}" role="img" aria-label="Estimated value of the ${esc(p.name)} over time with range band and comparable sales"></canvas></div>
+      <div class="tnote" id="nt-${p.key}"></div></div>
+    <div class="grid2">
+      <div class="chartbox"><div class="legend" id="lgi-${p.key}"></div><div class="chartwrap short"><canvas id="ix-${p.key}" role="img" aria-label="Local price index versus reference index"></canvas></div>
+        <div class="tnote" id="nti-${p.key}"></div></div>
+      <div class="chartbox"><div class="legend"><span>How the estimate itself has moved, one point per refresh</span></div><div class="chartwrap short"><canvas id="rn-${p.key}" role="img" aria-label="Headline estimate per refresh"></canvas></div>
+        <div class="tnote">Starts when tracking began (Oct 2026); the history line above is recomputed on every refresh.</div></div>
+    </div>
+    <h3 id="ct-${p.key}"></h3>
+    <div class="tablescroll"><table id="tb-${p.key}"></table></div>
+    <details class="model"><summary>Model details</summary><div id="md-${p.key}"></div></details>
+  </section>`;
+}
+function renderProp(p,i){
+  const S=p.series, c=dispCcy(p), col=css(COLOR[i]), m0=windowStart(p), i0=S.m.indexOf(m0);
+  const ms=S.m.slice(i0), X=ms.map(ts);
+  const V=ms.map((m,k)=>conv(p,S.v[i0+k],m)), LO=ms.map((m,k)=>conv(p,S.lo[i0+k],m)), HI=ms.map((m,k)=>conv(p,S.hi[i0+k],m));
+  const ds=[
+    {label:"80% range",data:X.map((x,k)=>({x,y:HI[k]})),borderWidth:0,pointRadius:0,fill:"+1",backgroundColor:col+"26",order:5},
+    {label:"80% range low",data:X.map((x,k)=>({x,y:LO[k]})),borderWidth:0,pointRadius:0,fill:false,order:5},
+    {label:"Estimated value",data:X.map((x,k)=>({x,y:V[k]})),borderColor:col,borderWidth:2,pointRadius:0,tension:.2,order:1},
+  ];
+  const sc=(p.scatter||[]).filter(s=>s[0].slice(0,7)>=m0).map(s=>({x:ts(s[0]),y:conv(p,s[1],s[0].slice(0,7))}));
+  if(sc.length) ds.push({label:p.kind==="flat"?"Listings (asking − typical discount), as this flat":"Nearby sale, translated to this home",type:"scatter",data:sc,
+    pointRadius:2.5,pointHoverRadius:5,backgroundColor:css("--muted")+"66",borderWidth:0,order:4});
+  const anc=(p.anchors||[]).filter(a=>a.date.slice(0,7)>=m0).map(a=>({x:ts(a.date),y:conv(p,a.value,a.date.slice(0,7)),lab:a.label}));
+  ds.push({label:"Known price (purchase / appraisal)",type:"scatter",data:anc,pointStyle:"rectRot",pointRadius:7,pointHoverRadius:9,
+    backgroundColor:css("--bg"),borderColor:css("--ink"),borderWidth:2,order:0});
+  const now=S.m[S.m.length-1], ck=(p.checks||[]).map(k=>({x:ts(k.date),y:conv(p,k.value,k.date.slice(0,7)),lab:k.label}));
+  if(p.realtor_estimate) ck.push({x:ts(now),y:conv(p,p.realtor_estimate,now),lab:"realtor.com estimate"});
+  if(ck.length) ds.push({label:"Cross-check (hand review / AVMs)",type:"scatter",data:ck,pointStyle:"triangle",pointRadius:6,pointHoverRadius:8,
+    backgroundColor:css("--ink"),borderWidth:0,order:0});
+  const bs=benchSeries(p,m0,ms);
+  if(bs) ds.push({label:state.bench+": same money at "+mlabel(ts(m0)),data:X.map((x,k)=>({x,y:bs[k]})),borderColor:css("--bench"),borderWidth:1.5,pointRadius:0,borderDash:[5,4],order:2});
+  const o=baseOpts(v=>money(v,c)); o.interaction={mode:"nearest",intersect:false};
+  o.plugins.tooltip.filter=it=>!/range/.test(it.dataset.label)||it.datasetIndex===0;
+  o.plugins.tooltip.callbacks.label=ctx=>{const d=ctx.raw, L=ctx.dataset.label;
+    if(L==="80% range"){const k=ctx.dataIndex;return ` 80% range ${money(LO[k],c)} – ${money(HI[k],c)}`;}
+    if(d.lab) return ` ${d.lab}: ${money(d.y,c,true)}`;
+    return ` ${L}: ${money(d.y,c)}`;};
+  o.plugins.tooltip.callbacks.title=it=>it.length?(it[0].dataset.type==="scatter"?new Date(it[0].parsed.x).toISOString().slice(0,10):mlabel(it[0].parsed.x)):"";
+  o.scales.x.min=X[0]; o.scales.x.max=X[X.length-1]+20*864e5;
+  const ylo=Math.min(...LO,...anc.map(a=>a.y),...ck.map(a=>a.y),...(bs||[])), yhi=Math.max(...HI,...anc.map(a=>a.y),...ck.map(a=>a.y),...(bs||[]));
+  o.scales.y.min=Math.max(0,ylo-(yhi-ylo)*0.45); o.scales.y.max=yhi+(yhi-ylo)*0.45; o.scales.y.ticks.includeBounds=false;   // outlier sales clip at the edges
+  mk("ch-"+p.key,{type:"line",data:{datasets:ds},options:o});
+  $("#lg-"+p.key).innerHTML=`<span><i class="sw" style="background:${col}"></i>Estimated value</span><span><i class="bd" style="background:${col}"></i>80% range</span>`
+    +(sc.length?`<span><i class="dt" style="background:var(--muted);opacity:.6"></i>${p.kind==="flat"?"Listings, as this flat":"Each nearby sale, as this home"}</span>`:"")
+    +`<span><i class="dm"></i>Known price</span>`+(ck.length?`<span><i class="dt" style="background:var(--ink);border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%)"></i>Cross-checks</span>`:"")
+    +(bs?`<span><i class="sw" style="background:var(--bench)"></i>${esc(state.bench)}, same money</span>`:"");
+  const r=ret(V[0],V[V.length-1],m0,now);
+  $("#nt-"+p.key).innerHTML=`${state.basis==="real"?"In today's "+(c==="EUR"?"euros (Portugal HICP)":"dollars (US CPI)")+". ":""}${mlabel(ts(m0))} → now: <b>${metricText(r)}</b> (${altText(r)}). `
+    +(p.kind!=="flat"?`Grey dots: every nearby sale since purchase, adjusted by the model for size, lot, rooms, age, condition words and location to what <i>this</i> home would have fetched that day. The line runs through their middle, bent to pass through this home's own known prices.`
+      :`Grey dots: current asking prices of comparable flats, converted to this flat's size and discounted by the typical asking-to-sale gap.`);
+  // index chart
+  const li=p.local_index||{q:[],v:[]}, ri=p.ref_index||{m:[],v:[]};
+  const lip=li.q.map((q,k)=>({x:Date.UTC(+q.slice(0,4),(+q.slice(-1)-1)*3+1,15),y:li.v[k]}));
+  const rip=ri.m.map((m,k)=>({x:ts(m),y:ri.v[k]}));
+  const oi=baseOpts(v=>Math.round(v)); oi.scales.x.min=ts(S.m[0]); oi.scales.x.max=ts(now); oi.plugins.tooltip.callbacks.label=ctx=>` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}`;
+  mk("ix-"+p.key,{type:"line",data:{datasets:[
+    {label:p.kind==="flat"?"INE: sold €/m², parish":"Local sales index (model)",data:lip,borderColor:col,borderWidth:2,pointRadius:0,tension:.2},
+    {label:ri.label||"Reference",data:rip,borderColor:css("--bench"),borderWidth:1.5,pointRadius:0,tension:.2}]},options:oi});
+  $("#lgi-"+p.key).innerHTML=`<span><i class="sw" style="background:${col}"></i>${p.kind==="flat"?"INE sold €/m² (parish)":"Local sales index from the model"}</span><span><i class="sw" style="background:var(--bench)"></i>${esc(ri.label||"")}</span>`;
+  $("#nti-"+p.key).textContent="Both rebased to 100 at purchase, nominal. "+(p.kind!=="flat"?"The local index is the model's quarter-by-quarter effect: it follows Zillow where sales are thin and the actual sales where they're plentiful.":"");
+  // runs
+  const rr=(p.runs||[]).map(r=>({x:ts(r.d),y:conv(p,r.v,r.d.slice(0,7))}));
+  const or=baseOpts(v=>money(v,c)); if(rr.length){or.scales.x.min=rr[0].x-45*864e5; or.scales.x.max=Math.max(rr[rr.length-1].x,rr[0].x+120*864e5);} or.plugins.tooltip.callbacks.label=ctx=>" "+money(ctx.parsed.y,c,true);
+  or.plugins.tooltip.callbacks.title=it=>it.length?new Date(it[0].parsed.x).toISOString().slice(0,10):"";
+  mk("rn-"+p.key,{type:"line",data:{datasets:[{data:rr,borderColor:col,borderWidth:2,pointRadius:rr.length<30?3:0,backgroundColor:col}]},options:or});
+  // comps table
+  const cm=p.comps||[];
+  if(p.kind==="flat"){
+    $("#ct-"+p.key).textContent=`Comparable listings (${cm.length})`;
+    $("#tb-"+p.key).innerHTML=`<thead><tr><th>Listing</th><th class="l">Type</th><th>m²</th><th>Asking</th><th>€/m²</th><th class="l">Floor / lift</th><th class="l">Status</th><th>As this flat*</th></tr></thead><tbody>`
+      +cm.map(x=>`<tr><td>${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.addr)}</a>`:esc(x.addr)}</td><td class="l">${esc(x.typology||"")}</td><td>${x.sqm||"—"}</td><td>${money(conv(p,x.price,now),c)}</td><td>${x.ppsm?Math.round(x.ppsm).toLocaleString():"—"}</td><td class="l">${esc([x.floor,x.lift?"lift":""].filter(Boolean).join(" · "))}</td><td class="l">${esc(x.status||"")}</td><td>${money(conv(p,x.eq_now,now),c)}</td></tr>`).join("")+"</tbody>";
+  } else {
+    $("#ct-"+p.key).textContent=`Closest sales in the last 12 months (${cm.length})`;
+    $("#tb-"+p.key).innerHTML=`<thead><tr><th>Address</th><th>Sold</th><th>Price</th><th>Bd/Ba</th><th>Sq ft</th>${p.kind==="sfr"?"<th>Lot</th>":""}<th>$/sq ft</th><th>Built</th><th class="l">Distance</th><th class="l">Remarks</th><th>As this home, today*</th></tr></thead><tbody>`
+      +cm.map(x=>`<tr><td>${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.addr)}</a>`:esc(x.addr)}${x.city&&!/Menlo|Francisco/.test(x.city)?` <span class="pill">${esc(x.city)}</span>`:""}</td><td>${x.date}</td><td>${money(conv(p,x.price,x.date.slice(0,7)),c)}</td><td>${x.beds??"—"}/${x.baths}</td><td>${x.sqft.toLocaleString()}</td>${p.kind==="sfr"?`<td>${x.lot?x.lot.toLocaleString():"—"}</td>`:""}<td>${x.ppsf.toLocaleString()}</td><td>${x.yb}</td><td class="l">${x.dist}</td><td class="l">${x.flags.join(", ")}</td><td><b>${money(conv(p,x.eq_now,now),c)}</b></td></tr>`).join("")+"</tbody>";
+  }
+  // model details
+  const M=p.model||{};
+  if(p.kind!=="flat"){
+    const eff=Object.entries(M.effects||{}).map(([k,v])=>`${esc(k)} ${v>=0?"+":""}${(v*100).toFixed(1)}%`).join(" · ");
+    const pe=M.peer||{};
+    $("#md-"+p.key).innerHTML=`<p>Fitted on <b>${M.n}</b> sales since ${esc(M.since)} (distance-weighted, robust). Typical error of a single sale vs the model: ±${Math.round((M.sigma||0)*100)}%. Effects (log points ≈ %): ${eff}. Size elasticity ${M.size_elasticity}.</p>
+      <p>This home's own premium vs a typical home with its features: ${(p.anchors||[]).map(a=>`${esc(a.label)} ${mlabel(ts(a.date))}: ${money(a.value,p.ccy)} vs typical ${money(a.model_typical,p.ccy)} (${pct((a.value/a.model_typical-1)*100,0)})`).join("; ")}.
+      Peers (${esc(pe.label||"")}, ${pe.n||0} sales): ${pct((pe.premium||0)*100,1)}. The purchase premium fades toward the peer premium with a ${M.half_life_years}-yr half-life; now ${pct((M.resid_now||0)*100,1)}.</p>
+      <p>*“As this home, today” = the sale price adjusted by the model for every difference in features, moved to today with the local index, plus this home's premium.</p>`;
+  } else {
+    $("#md-"+p.key).innerHTML=M.html||"";
+  }
+}
+
+function renderMethod(){
+  $("#method").innerHTML=`
+  <li><b>Why not Zestimate / Redfin Estimate.</b> They're national black boxes and disagree (Menlo: Redfin $1.90M vs realtor.com $2.59M). They're shown only as cross-check triangles.</li>
+  <li><b>US homes: local hedonic model.</b> ~10 years of sold records within ~¾–1 mile (realtor.com, plus Redfin for the latest year) → log price explained by size, lot, beds/baths, age, condition words in the listing remarks (remodeled / fixer / view / TIC), building size, city and position, plus one effect per quarter. The quarterly effects are a local sales index, pulled toward Zillow's ZHVI only where a quarter has few sales.</li>
+  <li><b>Pinned to what this home actually traded for.</b> The purchase price (and SF's 2020 refi appraisal, at half weight) tells the model how this home differs from a typical one with the same features. That premium is carried forward and fades with a 10-year half-life toward the premium of its closest peers: hand-picked same-view units for SF, the immediate blocks for Menlo. A lasting edge like a view therefore persists, and one-off luck at purchase does not.</li>
+  <li><b>Range</b> = 80% interval: the model's uncertainty in the local index plus the share of a single home's idiosyncratic premium that its own known prices no longer pin down. It's narrow on the purchase date and widens with time.</li>
+  <li><b>Lisbon</b>: Statistics Portugal (INE) median €/m² of dwellings actually <i>sold</i> in Arroios each quarter (from tax records), applied to the purchase price; cross-checked against current asking prices for comparable flats less the typical asking-to-sale gap.</li>
+  <li><b>Inflation-adjusted</b> converts every month to today's money: US CPI-U for dollars, Portugal HICP for euros. CAGR and total % use the selected window. <b>Benchmarks</b> put the home's value at the start of the window into the S&amp;P 500 or AAPL (total return, dividends reinvested) over the same dates.</li>
+  <li><b>Not published:</b> street addresses and coordinates (kept in a GitHub secret); comp distances are shown only as bands.</li>`;
+}
+
+function renderAll(){
+  document.querySelectorAll(".seg").forEach(s=>s.querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.v===state[s.dataset.k])));
+  renderKPIs(); renderPortfolio(); D.properties.forEach(renderProp);
+}
+document.querySelectorAll(".seg").forEach(s=>s.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  state[s.dataset.k]=b.dataset.v; try{localStorage.setItem("pt_state",JSON.stringify(state));}catch(e){} renderAll();}));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>D&&renderAll());
+
+fetch("data.json?"+Date.now()).then(r=>r.json()).then(d=>{
+  D=d;
+  if(!D.properties.some(p=>p.ccy==="EUR")) $("#ccySeg").style.display="none";
+  $("#props").innerHTML=D.properties.map(propHTML).join("");
+  const bad=Object.entries(D.status||{}).filter(([k,v])=>/FAIL/.test(v)&&!/cache/.test(v));
+  $("#updated").innerHTML="updated "+new Date(D.updated.replace("Z",":00Z")).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})
+    +(bad.length?` · <span class="warn" title="${esc(bad.map(x=>x.join(": ")).join("\n"))}">${bad.length} source(s) failed, showing last good</span>`:"");
+  renderMethod(); renderAll();
+}).catch(e=>{$("#updated").textContent="failed to load data.json";console.error(e);});
+</script>
+</body>
+</html>

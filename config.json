@@ -1,0 +1,196 @@
+{
+  "_note": "Public config. Street addresses + coordinates live ONLY in the SUBJECTS_JSON repo secret (local: .subjects.json, gitignored).",
+  "half_life_years": 10,
+  "properties": [
+    {
+      "key": "menlo",
+      "name": "Menlo Park home",
+      "icon": "🏡",
+      "ccy": "USD",
+      "kind": "sfr",
+      "area": "North Fair Oaks, Menlo Park",
+      "facts": {
+        "type": "Single-family",
+        "beds": 5,
+        "baths": 3.5,
+        "sqft": 1870,
+        "lot": 7125,
+        "year_built": 1948
+      },
+      "purchase": {
+        "date": "2015-04-10",
+        "price": 1280000
+      },
+      "anchors": [
+        {
+          "date": "2015-04-10",
+          "value": 1280000,
+          "label": "Purchase",
+          "kind": "sale",
+          "weight": 1.0
+        }
+      ],
+      "features": [
+        {
+          "from": "2015-04",
+          "sqft": 1870,
+          "lot": 7125,
+          "beds": 4,
+          "baths": 3,
+          "yb": 1948,
+          "new": 0,
+          "remodel": 0,
+          "fixer": 0,
+          "rc": 0
+        },
+        {
+          "from": "2023-06",
+          "beds": 5,
+          "baths": 3.5
+        },
+        {
+          "from": "2025-06",
+          "remodel": 1
+        }
+      ],
+      "zillow": {
+        "file": "Neighborhood_zhvi_uc_sfr_tier_0.33_0.67_sm_sa_month.csv",
+        "col": "RegionID",
+        "id": "233162",
+        "label": "Zillow ZHVI, Fair Oaks (Menlo Park) single-family"
+      },
+      "comps": {
+        "types": [
+          "single_family"
+        ],
+        "redfin_uipt": "1",
+        "cities": [
+          "Menlo Park",
+          "Redwood City"
+        ],
+        "radius_mi": 1.0,
+        "decay_mi": 0.5,
+        "sqft": [
+          700,
+          4500
+        ],
+        "peer_radius_mi": 0.15
+      },
+      "checks": [
+        {
+          "date": "2026-10-09",
+          "value": 2500000,
+          "low": 2300000,
+          "high": 2700000,
+          "label": "Hand-reviewed comps (15 sales, Oct 2026)"
+        },
+        {
+          "date": "2026-10-09",
+          "value": 1900000,
+          "label": "Redfin Estimate"
+        }
+      ]
+    },
+    {
+      "key": "sf",
+      "name": "SF condo",
+      "icon": "🌉",
+      "ccy": "USD",
+      "kind": "condo",
+      "area": "Telegraph Hill, San Francisco",
+      "facts": {
+        "type": "Condo (4-unit bldg)",
+        "beds": 1,
+        "baths": 1,
+        "sqft": 715,
+        "year_built": 1939,
+        "parking": "1 garage",
+        "view": "Bay / Golden Gate"
+      },
+      "purchase": {
+        "date": "2016-12-22",
+        "price": 920000
+      },
+      "anchors": [
+        {
+          "date": "2016-12-22",
+          "value": 920000,
+          "label": "Purchase",
+          "kind": "sale",
+          "weight": 1.0
+        },
+        {
+          "date": "2020-12-09",
+          "value": 955000,
+          "label": "Refi appraisal",
+          "kind": "appraisal",
+          "weight": 0.5
+        }
+      ],
+      "features": [
+        {
+          "from": "2016-12",
+          "sqft": 715,
+          "beds": 1,
+          "baths": 1,
+          "pre40": 1,
+          "new": 0,
+          "remodel": 0,
+          "fixer": 0,
+          "view": 1,
+          "tic": 0,
+          "park": 1,
+          "hoa": 2.2,
+          "bldg_sales": 2
+        }
+      ],
+      "zillow": {
+        "file": "Zip_zhvi_uc_condo_tier_0.33_0.67_sm_sa_month.csv",
+        "col": "RegionName",
+        "id": "94133",
+        "label": "Zillow ZHVI, ZIP 94133 condos"
+      },
+      "comps": {
+        "types": [
+          "condos",
+          "condo_townhome_rowhome_coop",
+          "townhomes"
+        ],
+        "redfin_uipt": "2,3",
+        "cities": [
+          "San Francisco"
+        ],
+        "radius_mi": 0.75,
+        "decay_mi": 0.4,
+        "sqft": [
+          350,
+          2000
+        ],
+        "peer_units": [
+          "1360 montgomery 2",
+          "402 vallejo",
+          "935 filbert 3",
+          "1025 lombard 4",
+          "455 vallejo 403",
+          "1145 green 2",
+          "25 medau 25",
+          "761 bay"
+        ]
+      },
+      "checks": [
+        {
+          "date": "2026-10-09",
+          "value": 1000000,
+          "low": 930000,
+          "high": 1090000,
+          "label": "Hand-reviewed comps (10 condo sales, Oct 2026)"
+        },
+        {
+          "date": "2026-10-09",
+          "value": 946822,
+          "label": "Redfin Estimate"
+        }
+      ]
+    }
+  ]
+}
