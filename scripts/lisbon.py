@@ -13,6 +13,7 @@ data.json, so a failed fetch never blanks the page.
 """
 import json
 import math
+import os
 import re
 import statistics
 import time
@@ -22,41 +23,10 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/129.0 Safari/537.36")
-INE = "https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd={v}&Dim1=T&Dim2={g}&lang=PT"
-PT_MONTHS = {m: i + 1 for i, m in enumerate(["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
-                                             "agosto", "setembro", "outubro", "novembro", "dezembro"])}
+from ine import UA, _get, ine  # noqa: E402,F401  (stdlib-only; shared with the Mac seed job)
 
-
-def _get(url, timeout=120, accept="application/json"):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": accept, "Accept-Language": "pt-PT"})
-    return urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "ignore")
-
-
-def ine(varcd, geo, dim3, tries=3):
-    """{period: value} where period is 'YYYYQn' or 'YYYY-MM'."""
-    for i in range(tries):
-        try:
-            d = json.loads(_get(INE.format(v=varcd, g=geo)))[0]["Dados"]
-            out = {}
-            for per, rows in d.items():
-                row = next((r for r in rows if str(r.get("dim_3")) == dim3), None)
-                if not row or not str(row.get("valor", "")).strip():
-                    continue
-                q = re.match(r"(\d)\.º Trimestre de (\d{4})", per)
-                m = re.match(r"(\w+) de (\d{4})", per)
-                if q:
-                    out[f"{q.group(2)}Q{q.group(1)}"] = float(row["valor"])
-                elif m and m.group(1).lower() in PT_MONTHS:
-                    out[f"{m.group(2)}-{PT_MONTHS[m.group(1).lower()]:02d}"] = float(row["valor"])
-            if len(out) < 8:
-                raise RuntimeError("too few points")
-            return dict(sorted(out.items()))
-        except Exception:
-            if i == tries - 1:
-                raise
-            time.sleep(15 * (i + 1))
+SEED = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed", "ine.json")
+SERIES = {"t3_parish": ("0012241", "parish", "3"), "appraisal": ("0012248", "municipality", "1")}
 
 
 def imovirtual(cfg):
@@ -107,15 +77,26 @@ def value(pcfg, prev, STATUS, subj=None):
     prev = prev or {}
     old = (prev.get("inputs") or {})
     inputs = {}
-    for name, (v, g, d) in {"t3_parish": ("0012241", cfg["ine"]["parish"], "3"),
-                            "appraisal": ("0012248", cfg["ine"]["municipality"], "1")}.items():
+    seed = {}
+    try:
+        with open(SEED) as f:
+            seed = json.load(f)
+    except Exception:
+        pass
+    on_ci = bool(os.environ.get("GITHUB_ACTIONS"))
+    for name, (v, geo, d) in SERIES.items():
+        if on_ci and seed.get(name):                               # INE blocks runners: use the Mac's weekly copy
+            inputs[name] = seed[name]
+            STATUS[f"{key}:ine_{name}"] = f"seed {seed.get('updated', '?')[:10]}, to {max(seed[name])}"
+            continue
         try:
-            inputs[name] = ine(v, g, d)
+            inputs[name] = ine(v, cfg["ine"][geo], d)
             STATUS[f"{key}:ine_{name}"] = f"ok to {max(inputs[name])}"
         except Exception as e:
-            if name not in old:
+            fallback = seed.get(name) or old.get(name)
+            if not fallback:
                 raise
-            inputs[name] = old[name]
+            inputs[name] = fallback
             STATUS[f"{key}:ine_{name}"] = f"FAIL {type(e).__name__}: kept last good (cache)"
     try:
         listings = imovirtual(cfg)

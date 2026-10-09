@@ -1,7 +1,8 @@
 name: refresh
 
 # Twice-weekly server-side refresh: pulls ~10 yrs of sold comps (realtor.com via HomeHarvest +
-# Redfin's sold export), Zillow ZHVI, FRED CPI/HICP/FX and INE (Lisbon), refits the local
+# Redfin's sold export), Zillow ZHVI, FRED CPI/HICP/FX, imovirtual listings and INE (Lisbon; read from seed/ine.json, which the
+# Mac's weekly com.hassanlashkari.ine-seed job refreshes because INE refuses GitHub's runners), refits the local
 # models and rewrites data.json. Street addresses/coordinates come from the SUBJECTS_JSON
 # secret; the sales cache (which holds coordinates) lives in the Actions cache, never the repo.
 on:
