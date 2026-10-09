@@ -13,7 +13,7 @@ done
 GIT=/usr/bin/git
 $GIT pull -q --rebase --autostash origin main || { $GIT rebase --abort 2>/dev/null; exit 1; }
 "$PY" scripts/ine_seed.py || exit 1
-if ! $GIT diff --quiet -- seed/ine.json; then
+if [ -n "$($GIT status --porcelain -- seed/ine.json)" ]; then
   $GIT add seed/ine.json
   $GIT commit -qm "seed: INE series $(date +%F) (fetched on the Mac; INE blocks GitHub runners)"
   for i in 1 2 3; do $GIT push -q origin main && exit 0; $GIT pull -q --rebase --autostash origin main; done
