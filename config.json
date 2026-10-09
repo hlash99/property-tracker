@@ -191,6 +191,63 @@
           "label": "Redfin Estimate"
         }
       ]
+    },
+    {
+      "key": "lisbon",
+      "name": "Lisbon flat",
+      "icon": "🇵🇹",
+      "ccy": "EUR",
+      "kind": "flat",
+      "area": "Arroios (Estefânia), Lisbon",
+      "facts": {
+        "type": "Apartment T3, 3rd floor, lift",
+        "sqm": 122,
+        "year_built": "1980s",
+        "condition": "fully renovated"
+      },
+      "purchase": {
+        "date": "2021-07-01",
+        "price": 555000
+      },
+      "anchors": [
+        {
+          "date": "2021-07-01",
+          "value": 555000,
+          "label": "Purchase (~Jul 2021)",
+          "kind": "sale",
+          "weight": 1.0
+        }
+      ],
+      "half_life_years": 4,
+      "ine": {
+        "parish": "1A0110656",
+        "municipality": "1A01106"
+      },
+      "listings": {
+        "parish": "arroios",
+        "m2": [
+          85,
+          160
+        ],
+        "hoods": [
+          "Estefânia",
+          "Saldanha - Picoas",
+          "Campo de Santana - Santa Marta"
+        ],
+        "ask_to_sale_gap": 0.07,
+        "size_elasticity": 0.9,
+        "fallback_premium": 0.12,
+        "max_detail": 30
+      },
+      "checks": [
+        {
+          "date": "2026-10-09",
+          "value": 670000,
+          "low": 600000,
+          "high": 740000,
+          "label": "Hand-reviewed comps + INE (Oct 2026)"
+        }
+      ]
     }
   ]
 }

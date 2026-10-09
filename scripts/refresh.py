@@ -467,7 +467,7 @@ def main():
                 p.update(value_us(pcfg, subs[key], cfg["half_life_years"], zl))
             else:
                 import lisbon
-                p.update(lisbon.value(pcfg, prev_props.get(key), STATUS))
+                p.update(lisbon.value(pcfg, prev_props.get(key), STATUS, subs.get(key)))
             STATUS[key] = "ok"
         except Exception as e:
             import traceback
