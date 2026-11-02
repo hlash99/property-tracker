@@ -70,6 +70,7 @@
   @media(max-width:720px){.grid2{grid-template-columns:1fr}}
   @media(max-width:560px){.wrap{padding:0 16px 56px}h2{font-size:18px}.chartwrap{height:270px}.kpi .v{font-size:24px}
     .controls{top:0;position:static}.seg button{padding:6px 9px;font-size:12px}}
+  .kpi .v .alt{font-size:.62em;font-weight:500;color:var(--muted);margin-left:4px}
 </style>
 </head>
 <body>
@@ -87,7 +88,6 @@
     <div class="seg" data-k="metric"><button data-v="total">Total %</button><button data-v="cagr" class="on">CAGR %/yr</button></div>
     <div class="seg" data-k="range"><button data-v="all" class="on">Since purchase</button><button data-v="5">5 yr</button><button data-v="1">1 yr</button></div>
     <div class="seg" data-k="bench"><button data-v="none" class="on">No benchmark</button><button data-v="S&amp;P 500">vs S&amp;P 500</button><button data-v="AAPL">vs AAPL</button></div>
-    <div class="seg" data-k="ccy" id="ccySeg" title="Lisbon flat currency"><button data-v="EUR" class="on">Lisbon €</button><button data-v="USD">Lisbon $</button></div>
   </div>
 
   <div class="kpis" id="kpis"></div>
@@ -109,8 +109,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 const $=s=>document.querySelector(s);
-const state={basis:"real",metric:"cagr",range:"all",bench:"none",ccy:"EUR"};
+const state={basis:"real",metric:"cagr",range:"all",bench:"none",ccy:"USD"};
 try{Object.assign(state,JSON.parse(localStorage.getItem("pt_state")||"{}"));}catch(e){}
+state.ccy="USD";  // the Lisbon toggle is gone; ignore a saved euro setting
 let D=null; const charts={};
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const COLOR=["--s1","--s2","--s3"];
@@ -133,6 +134,8 @@ function conv(p,v,m){
   if(state.basis==="real"){ const dfl=deflator(c); v*=dfl[latestKey(dfl)]/lastAtOrBefore(dfl,m); }
   return v;
 }
+/* the Lisbon flat in its own currency, shown beside the dollar figure */
+function eurVal(v,m){ if(state.basis!=="real") return v; const h=D.ref.hicp_pt; return v*h[latestKey(h)]/lastAtOrBefore(h,m); }
 function toUSD(p,v,m){ return p.ccy==="EUR" ? v*lastAtOrBefore(D.ref.eurusd,m) : v; }
 function realUSD(v,m){ if(state.basis!=="real") return v; const c=D.ref.cpi_us; return v*c[latestKey(c)]/lastAtOrBefore(c,m); }
 const sym=c=>c==="EUR"?"€":"$";
@@ -203,8 +206,9 @@ function renderKPIs(){
     if(p.realtor_estimate) xs.push(`realtor.com ${money(conv(p,p.realtor_estimate,mEnd),c)}`);
     const since=state.range==="all"?"since purchase "+mlabel(ts(S.m[0])):"last "+state.range+" yr";
     out.push(`<div class="kpi"><div class="l"><i style="background:var(${COLOR[i]})"></i>${esc(p.icon)} ${esc(p.name)}</div>
-      <div class="v">${money(v,c)}</div><div class="r">80% range ${money(lo,c)} – ${money(hi,c)}</div>
+      <div class="v">${money(v,c)}${p.ccy==="EUR"?` <span class="alt">${money(eurVal(S.v[n],mEnd),"EUR")}</span>`:""}</div><div class="r">80% range ${money(lo,c)} – ${money(hi,c)}</div>
       <div class="g ${r.total>=0?"up":"dn"}">${metricText(r)} <span class="r" style="font-weight:400">${since} · ${altText(r)}</span></div>
+      ${p.ccy==="EUR"?`<div class="x">In euros: ${metricText(ret(eurVal(S.v[i0],m0),eurVal(S.v[n],mEnd),m0,mEnd))}. The dollar figure also moves with EUR/USD.</div>`:""}
       ${bt}<div class="x">Cross-checks: ${xs.join(" · ")||"—"}</div></div>`);
   });
   // portfolio card (USD)
@@ -238,7 +242,7 @@ function propHTML(p,i){
     f.sqm?f.sqm+" m²":"",f.lot?f.lot.toLocaleString()+" sq ft lot":"",f.year_built?"built "+f.year_built:"",f.parking||"",f.view?f.view+" view":""].filter(Boolean).join(" · ");
   return `<section id="sec-${p.key}">
     <h2>${esc(p.icon)} ${esc(p.name)} <span class="pill">${esc(p.area)}</span></h2>
-    <div class="facts">${esc(fx)} · bought ${mlabel(ts(p.purchase.date))} for ${money(p.purchase.price,p.ccy,true)}</div>
+    <div class="facts">${esc(fx)} · bought ${mlabel(ts(p.purchase.date))} for ${money(p.purchase.price,p.ccy,true)}${p.ccy==="EUR"?` (${money(toUSD(p,p.purchase.price,p.series.m[0]),"USD",true)})`:""}</div>
     <div class="chartbox"><div class="legend" id="lg-${p.key}"></div>
       <div class="chartwrap"><canvas id="ch-${p.key}" role="img" aria-label="Estimated value of the ${esc(p.name)} over time with range band and comparable sales"></canvas></div>
       <div class="tnote" id="nt-${p.key}"></div></div>
@@ -279,6 +283,7 @@ function renderProp(p,i){
   o.plugins.tooltip.callbacks.label=ctx=>{const d=ctx.raw, L=ctx.dataset.label;
     if(L==="80% range"){const k=ctx.dataIndex;return ` 80% range ${money(LO[k],c)} – ${money(HI[k],c)}`;}
     if(d.lab) return ` ${d.lab}: ${money(d.y,c,true)}`;
+    if(L==="Estimated value"&&p.ccy==="EUR"){const k=ctx.dataIndex;return ` ${L}: ${money(d.y,c)} · ${money(eurVal(S.v[i0+k],ms[k]),"EUR")}`;}
     return ` ${L}: ${money(d.y,c)}`;};
   o.plugins.tooltip.callbacks.title=it=>it.length?(it[0].dataset.type==="scatter"?new Date(it[0].parsed.x).toISOString().slice(0,10):mlabel(it[0].parsed.x)):"";
   o.scales.x.min=X[0]; o.scales.x.max=X[X.length-1]+20*864e5;
@@ -354,7 +359,6 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>D&&rend
 
 fetch("data.json?"+Date.now()).then(r=>r.json()).then(d=>{
   D=d;
-  if(!D.properties.some(p=>p.ccy==="EUR")) $("#ccySeg").style.display="none";
   $("#props").innerHTML=D.properties.map(propHTML).join("");
   const bad=Object.entries(D.status||{}).filter(([k,v])=>/FAIL/.test(v)&&!/cache/.test(v));
   $("#updated").innerHTML="updated "+new Date(D.updated.replace("Z",":00Z")).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})
