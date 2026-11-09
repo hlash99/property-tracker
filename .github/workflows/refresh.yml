@@ -9,6 +9,8 @@ on:
   schedule:
     - cron: '17 14 * * 1,4'   # Mon + Thu 14:17 UTC (~07:17 PT)
   workflow_dispatch: {}        # also lets the dashboard ↻ button trigger it
+  push:
+    branches: [claude/valuation-check]   # TEMPORARY: validation run, removed before merge
 
 permissions:
   contents: write

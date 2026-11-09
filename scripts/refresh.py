@@ -28,6 +28,7 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hedonic as H  # noqa: E402
+import backtest as B  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data.json")
@@ -72,14 +73,28 @@ def get(url, tries=3, **kw):
 
 
 # ---------------------------------------------------------------- reference series
-def fred(sid):
+def fred(sid, fmt="%Y-%m"):
     """FRED CSV, no key. Default UA on purpose (a browser UA makes FRED hang)."""
     r = get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}")
     df = pd.read_csv(io.StringIO(r.text))
     df.columns = ["date", "v"]
     df["v"] = pd.to_numeric(df.v, errors="coerce")
     df = df.dropna()
-    return pd.Series(df.v.values, index=pd.to_datetime(df.date).dt.strftime("%Y-%m"))
+    return pd.Series(df.v.values, index=pd.to_datetime(df.date).dt.strftime(fmt))
+
+
+def fill_fx(monthly, daily, now_m):
+    """FRED's monthly EUR/USD average only appears after a month ends, so the newest months (always
+    including the current one) had no rate and silently borrowed the last published month's average.
+    Fill them from the daily series: the month's average for finished months, the latest fixing for
+    the current month. Returns the months added."""
+    added = []
+    last = max(monthly) if monthly else ""
+    for m in sorted({d[:7] for d in daily.index if d[:7] > last and d[:7] <= now_m}):
+        v = daily[[d[:7] == m for d in daily.index]]
+        monthly[m] = round(float(v.iloc[-1] if m == now_m else v.mean()), 4)
+        added.append(m)
+    return added
 
 
 def zillow(file, col, rid):
@@ -165,6 +180,24 @@ def addr_key(a):
     return " ".join(t[:2] + ([t[t.index("unit") + 1]] if "unit" in t and t.index("unit") + 1 < len(t) else []))
 
 
+def dedupe_sales(d):
+    """One row per sale. The same closing often shows up in both sources (and in the cache) dated a few
+    days apart, sometimes across a month boundary: same address within 45 days is the same sale.
+    Preference: this run's realtor row, then this run's Redfin row, then the cached copy."""
+    d = d.assign(k=d.addr.map(addr_key)).sort_values(["_o", "date"], kind="stable")
+    keep = []
+    for _, g in d.groupby("k", sort=False):
+        if len(g) == 1:
+            keep.append(g.index[0])
+            continue
+        kept = []
+        for i, dt in zip(g.index, g.date):
+            if all(abs((dt - k2).days) > 45 for k2 in kept):
+                kept.append(dt)
+                keep.append(i)
+    return d.loc[sorted(keep)].drop(columns=["k"])
+
+
 def all_sales(key, subj, pc, date_from):
     frames = []
     cpath = os.path.join(CACHE, f"sales_{key}.pkl")
@@ -196,11 +229,21 @@ def all_sales(key, subj, pc, date_from):
             return pd.read_pickle(cpath)
         raise RuntimeError("no sales source worked and no cache")
     d = pd.concat(frames, ignore_index=True)
+    d["_o"] = (d.src != "realtor").astype(int)                 # 'realtor' before 'redfin': keep realtor's remarks
+    n_fresh = len(d)
+    if os.path.exists(cpath):
+        # realtor.com only serves ~10 years, so each refresh used to lose the oldest sales (the ones
+        # nearest the purchase dates) and a short pull shrank the model. Keep what earlier runs saw.
+        try:
+            d = pd.concat([d, pd.read_pickle(cpath).assign(_o=2)], ignore_index=True)
+        except Exception as e:
+            log(f"  {key}: cache unreadable {type(e).__name__}")
     d = d.dropna(subset=["date", "price", "lat", "lon"])
-    d["k"] = d.addr.map(addr_key)
-    d["ym"] = d.date.dt.to_period("M")
-    d = d.sort_values("src")                                   # 'realtor' before 'redfin': keep realtor's remarks
-    d = d.drop_duplicates(["k", "ym"]).drop(columns=["k", "ym"])
+    d = dedupe_sales(d)
+    STATUS[f"{key}:history"] = (f"{len(d)} sales since {d.date.min().strftime('%Y-%m')} "
+                                f"({int((d._o == 2).sum())} only in cache, {n_fresh} pulled)")
+    log(f"  {key} history: {STATUS[f'{key}:history']}")
+    d = d.drop(columns=["_o"])
     # cache only when realtor (the 10-year history) succeeded, so a redfin-only run can't shrink it
     if f"{key}:realtor_cache" not in STATUS and any(f.src.iloc[0] == "realtor" for f in frames if len(f)):
         os.makedirs(CACHE, exist_ok=True)
@@ -295,6 +338,13 @@ def value_us(pcfg, subj, half_life, zl):
     m = H.fit(d, feats, zq, w)
     log(f"  {key}: model n={m['n']} sigma={m['sigma']:.3f}")
     d["res"] = m["res"]
+    bt = {}
+    try:                                                           # honesty checks; never allowed to break a refresh
+        bt["holdout"] = B.holdout(d, feats, zq, w)
+        bt["repeat"] = B.repeat_sales(d, d.addr.map(addr_key), m["sigma"], half_life)
+        log(f"  {key}: backtest {json.dumps(bt)}")
+    except Exception as e:
+        log(f"  {key}: backtest failed {type(e).__name__}")
 
     # Peer premium: how far above/below the model's "typical" home the closest true peers
     # trade - hand-picked same-view units (SF) or the immediate blocks (Menlo). The home's
@@ -423,7 +473,7 @@ def value_us(pcfg, subj, half_life, zl):
         "model": {"n": int(m["n"]), "sigma": round(m["sigma"], 3), "half_life_years": half_life,
                   "since": str(d.date.min().date()), "resid_now": round(float(resid[-1]), 3), "peer": peer,
                   "effects": {nice.get(f, f): round(H.coef(m, f), 4) for f in feats if f in nice},
-                  "size_elasticity": round(H.coef(m, "lsq"), 3)},
+                  "size_elasticity": round(H.coef(m, "lsq"), 3), "backtest": bt},
     }
 
 
@@ -445,9 +495,15 @@ def main():
             STATUS[name] = f"FAIL {type(e).__name__} (kept last)"
         log(" ", name, STATUS[name])
     try:
-        ref["eurusd_now"] = float(fred("DEXUSEU").iloc[-1])
-    except Exception:
-        pass
+        dx = fred("DEXUSEU", "%Y-%m-%d")
+        ref["eurusd_now"] = float(dx.iloc[-1])
+        ref["eurusd_now_date"] = dx.index[-1]
+        if STATUS["eurusd"].startswith("ok"):                      # never patch a kept-last copy twice
+            added = fill_fx(ref["eurusd"], dx, out["updated"][:7])
+            if added:
+                STATUS["eurusd"] += f" (+{','.join(added)} from daily, latest {dx.index[-1]})"
+    except Exception as e:
+        log("  eurusd daily:", type(e).__name__)
     try:
         ref["bench"] = benchmarks()
         STATUS["bench"] = "ok"
