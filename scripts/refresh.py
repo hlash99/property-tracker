@@ -343,22 +343,29 @@ def value_us(pcfg, subj, half_life, zl):
         bt["holdout"] = B.holdout(d, feats, zq, w)
         bt["repeat"] = B.repeat_sales(d, d.addr.map(addr_key), m["sigma"], half_life)
         log(f"  {key}: backtest {json.dumps(bt)}")
-        for nm, kw, ww, zz in [("lam15", dict(lam=15.0), w, zq), ("lam30", dict(lam=30.0), w, zq), ("lam120", dict(lam=120.0), w, zq),
-                               ("lam240", dict(lam=240.0), w, zq), ("ridge5", dict(ridge=5.0), w, zq), ("ridge0.2", dict(ridge=0.2), w, zq),
-                               ("noHuber", dict(iters=1), w, zq), ("huber8", dict(iters=8), w, zq),
-                               ("noZillow_lam60", {}, w, zq * 0 + 1.0), ("noZillow_lam15", dict(lam=15.0), w, zq * 0 + 1.0),
-                               ("uniform_w", {}, np.ones(len(w)), zq), ("w_sqrt", {}, np.sqrt(w), zq), ("w_sq", {}, w ** 2, zq)]:
-            h = B.holdout(d, feats, zz, ww, score_w=w, **kw)
-            # score every variant on the SAME (production) weights so they are comparable
-            log(f"  EXP {key} {nm}: " + json.dumps({k: h[k] for k in ("bias", "mdae", "q80", "cover80")}))
-        a_in = np.abs(d.res.to_numpy()); rec = (d.q >= sorted(d.q.unique())[-8]).to_numpy()
-        log(f"  EXP {key} in-sample all q80={B.wquant(a_in, w, .8):.4f} med={B.wquant(a_in, w, .5):.4f}; last8q q80={B.wquant(a_in[rec], w[rec], .8):.4f} "
-            f"med={B.wquant(a_in[rec], w[rec], .5):.4f} bias={B.wquant(d.res.to_numpy()[rec], w[rec], .5):.4f} n={int(rec.sum())} "
-            f"src_recent={d[rec].src.value_counts().to_dict()} near_w>=.3: n={int((w[rec] >= .3).sum())}")
-        for srcn in ("realtor", "redfin"):
-            mk = rec & (d.src == srcn).to_numpy()
-            if mk.sum() > 5:
-                log(f"  EXP {key} last8q {srcn}: med_res={np.median(d.res.to_numpy()[mk]):.4f} n={int(mk.sum())}")
+        d2 = d.assign(rf=(d.src == "redfin").astype(float))
+        f2 = feats + ["rf"]
+        for nm, dd, ff in (("base", d, feats), ("src_dummy", d2, f2)):
+            h = B.holdout(dd, ff, zq, w)
+            log(f"  EXP {key} {nm}: " + json.dumps({k: h[k] for k in ("bias", "mdae", "q80", "cover80", "n")}))
+            for srcn in ("realtor", "redfin"):
+                hs = B.holdout(dd, ff, zq, w, score_w=w * (dd.src == srcn).to_numpy() + 1e-12)
+                log(f"  EXP {key} {nm} scored on {srcn}: " + json.dumps({k: hs[k] for k in ("bias", "mdae", "q80")}))
+        m2 = H.fit(d2, f2, zq, w)
+        qn = m["tau"].index[-1]
+        log(f"  EXP {key} src_dummy: coef={H.coef(m2, 'rf'):.4f} sigma={m2['sigma']:.4f} vs {m['sigma']:.4f}; "
+            f"tau_now shift={m2['tau'][qn] - m['tau'][qn]:+.4f}; tau shift last6={[round(float(x), 3) for x in (m2['tau'] - m['tau']).iloc[-6:]]}; "
+            f"n_redfin={int(d2.rf.sum())} share_last4q={float(d2[d2.q >= qn - 3].rf.mean()):.2f}")
+        xs_ = subject_x(pcfg, datetime.now(timezone.utc).strftime("%Y-%m"), kind)
+        log(f"  EXP {key} subject typical now: base={math.exp(H.predict(m, xs_, qn)[0]):.0f} dummy={math.exp(H.predict(m2, dict(xs_, rf=0.0), qn)[0]):.0f}")
+        for c in ("park", "hoa", "sqft", "yb"):
+            if c in d:
+                log(f"  EXP {key} {c}: realtor med={d[d.src == 'realtor'][c].median():.2f} redfin med={d[d.src == 'redfin'][c].median():.2f}")
+        rr = d[d.q >= qn - 3]
+        log(f"  EXP {key} last4q ppsf: realtor med={(rr[rr.src == 'realtor'].price / rr[rr.src == 'realtor'].sqft).median():.0f} "
+            f"redfin med={(rr[rr.src == 'redfin'].price / rr[rr.src == 'redfin'].sqft).median():.0f}; "
+            f"price realtor={rr[rr.src == 'realtor'].price.median():.0f} redfin={rr[rr.src == 'redfin'].price.median():.0f}; "
+            f"dist realtor={rr[rr.src == 'realtor'].dist.median():.2f} redfin={rr[rr.src == 'redfin'].dist.median():.2f}")
     except Exception as e:
         log(f"  {key}: backtest failed {type(e).__name__}")
 
