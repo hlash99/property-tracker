@@ -271,10 +271,15 @@ def model_frame(d, subj, pc, kind):
     d["baths"] = d.baths.fillna(d.baths.median())
     d["yb"] = d.yb.fillna(d.yb.median())
     d["new"] = (d.yb >= 2010).astype(float)
+    # Records only Redfin has (it is pulled for the last year only, without remarks) are a different mix of
+    # homes: around the SF condo they sell ~20% below what their attributes predict and made up half of the
+    # latest year's sample, which dragged the recent quarters of the local index down. A source effect keeps
+    # that composition shift out of the time trend (out of sample: median miss 15% -> 12% for SF, Menlo unchanged).
+    d["rf"] = (d.src == "redfin").astype(float)
     if kind == "sfr":
         d["llot"] = np.log(d.lot.fillna(d.lot.median()).clip(2000, 20000))
         d["rc"] = (d.city == "Redwood City").astype(float)
-        feats = ["lsq", "llot", "beds", "baths", "new", "remodel", "fixer", "rc", "dx", "dy"]
+        feats = ["lsq", "llot", "beds", "baths", "new", "remodel", "fixer", "rc", "rf", "dx", "dy"]
     else:
         d["pre40"] = (d.yb < 1940).astype(float)
         d["hoa"] = d.hoa.fillna(d.hoa.median()).clip(0, 2500) / 100
@@ -286,7 +291,7 @@ def model_frame(d, subj, pc, kind):
         units = d.assign(s=street).groupby("s").addr.nunique()
         d["lbld"] = np.log(street.map(units).clip(1, 200))
         feats = ["lsq", "beds", "baths", "pre40", "new", "remodel", "fixer", "view", "tic", "park", "hoa", "lbld",
-                 "dx", "dy"]
+                 "rf", "dx", "dy"]
     d["q"] = d.date.dt.to_period("Q")
     return d, feats
 
@@ -301,7 +306,7 @@ def subject_x(pcfg, month, kind):
         x["llot"] = math.log(min(max(x["lot"], 2000), 20000))
     else:
         x["lbld"] = math.log(max(x.get("bldg_sales", 1), 1))
-    x["dx"] = x["dy"] = 0.0
+    x["dx"] = x["dy"] = x["rf"] = 0.0
     return x
 
 
@@ -343,29 +348,6 @@ def value_us(pcfg, subj, half_life, zl):
         bt["holdout"] = B.holdout(d, feats, zq, w)
         bt["repeat"] = B.repeat_sales(d, d.addr.map(addr_key), m["sigma"], half_life)
         log(f"  {key}: backtest {json.dumps(bt)}")
-        d2 = d.assign(rf=(d.src == "redfin").astype(float))
-        f2 = feats + ["rf"]
-        for nm, dd, ff in (("base", d, feats), ("src_dummy", d2, f2)):
-            h = B.holdout(dd, ff, zq, w)
-            log(f"  EXP {key} {nm}: " + json.dumps({k: h[k] for k in ("bias", "mdae", "q80", "cover80", "n")}))
-            for srcn in ("realtor", "redfin"):
-                hs = B.holdout(dd, ff, zq, w, score_w=w * (dd.src == srcn).to_numpy() + 1e-12)
-                log(f"  EXP {key} {nm} scored on {srcn}: " + json.dumps({k: hs[k] for k in ("bias", "mdae", "q80")}))
-        m2 = H.fit(d2, f2, zq, w)
-        qn = m["tau"].index[-1]
-        log(f"  EXP {key} src_dummy: coef={H.coef(m2, 'rf'):.4f} sigma={m2['sigma']:.4f} vs {m['sigma']:.4f}; "
-            f"tau_now shift={m2['tau'][qn] - m['tau'][qn]:+.4f}; tau shift last6={[round(float(x), 3) for x in (m2['tau'] - m['tau']).iloc[-6:]]}; "
-            f"n_redfin={int(d2.rf.sum())} share_last4q={float(d2[d2.q >= qn - 3].rf.mean()):.2f}")
-        xs_ = subject_x(pcfg, datetime.now(timezone.utc).strftime("%Y-%m"), kind)
-        log(f"  EXP {key} subject typical now: base={math.exp(H.predict(m, xs_, qn)[0]):.0f} dummy={math.exp(H.predict(m2, dict(xs_, rf=0.0), qn)[0]):.0f}")
-        for c in ("park", "hoa", "sqft", "yb"):
-            if c in d:
-                log(f"  EXP {key} {c}: realtor med={d[d.src == 'realtor'][c].median():.2f} redfin med={d[d.src == 'redfin'][c].median():.2f}")
-        rr = d[d.q >= qn - 3]
-        log(f"  EXP {key} last4q ppsf: realtor med={(rr[rr.src == 'realtor'].price / rr[rr.src == 'realtor'].sqft).median():.0f} "
-            f"redfin med={(rr[rr.src == 'redfin'].price / rr[rr.src == 'redfin'].sqft).median():.0f}; "
-            f"price realtor={rr[rr.src == 'realtor'].price.median():.0f} redfin={rr[rr.src == 'redfin'].price.median():.0f}; "
-            f"dist realtor={rr[rr.src == 'realtor'].dist.median():.2f} redfin={rr[rr.src == 'redfin'].dist.median():.2f}")
     except Exception as e:
         log(f"  {key}: backtest failed {type(e).__name__}")
 
@@ -435,7 +417,11 @@ def value_us(pcfg, subj, half_life, zl):
             i0, r0, _ = prev[-1]
             resid[i] = r_peer + (r0 - r_peer) * math.exp(-lam * (i - i0))
         rho[i] = max(p[2] * math.exp(-lam * abs(i - p[0])) for p in pts)
-    sig = np.sqrt(se ** 2 + (m["sigma"] ** 2) * (1 - rho ** 2))
+    # The fit's sigma down-weights outliers, so it can flatter the model. If sales the model had not seen
+    # scattered more widely than that (holdout), the range uses the wider, out-of-sample spread.
+    ho = bt.get("holdout") or {}
+    s_band = max(m["sigma"], ho["sigma_oos"]) if ho.get("n", 0) >= 50 else m["sigma"]
+    sig = np.sqrt(se ** 2 + (s_band ** 2) * (1 - rho ** 2))
     val = np.exp(base + resid)
     z80 = 1.2816
 
@@ -479,7 +465,8 @@ def value_us(pcfg, subj, half_life, zl):
     tau_s = m["tau"][m["tau"].index >= pd.Period(start, "M").asfreq("Q")]
     nice = {"lsq": "Size (log sq ft)", "llot": "Lot (log)", "beds": "Per bedroom", "baths": "Per bath",
             "remodel": "Remodeled (remarks)", "fixer": "Fixer (remarks)", "view": "View (remarks)",
-            "tic": "TIC (remarks)", "park": "Garage parking", "lbld": "Building size (log units sold)", "rc": "Redwood City address", "new": "Built 2010+"}
+            "tic": "TIC (remarks)", "park": "Garage parking", "lbld": "Building size (log units sold)", "rc": "Redwood City address", "new": "Built 2010+",
+            "rf": "Redfin-only record (not on realtor.com)"}
     return {
         "series": {"m": months, "v": [round(v) for v in val],
                    "lo": [round(v * math.exp(-z80 * s)) for v, s in zip(val, sig)],
@@ -493,7 +480,8 @@ def value_us(pcfg, subj, half_life, zl):
                    "v": [round(v / ztail.iloc[0] * 100, 2) for v in ztail]},
         "comps": comps, "scatter": scatter,
         "realtor_estimate": None if est.empty else int(est.iloc[0]),
-        "model": {"n": int(m["n"]), "sigma": round(m["sigma"], 3), "half_life_years": half_life,
+        "model": {"n": int(m["n"]), "sigma": round(m["sigma"], 3), "sigma_band": round(s_band, 3),
+                  "half_life_years": half_life,
                   "since": str(d.date.min().date()), "resid_now": round(float(resid[-1]), 3), "peer": peer,
                   "effects": {nice.get(f, f): round(H.coef(m, f), 4) for f in feats if f in nice},
                   "size_elasticity": round(H.coef(m, "lsq"), 3), "backtest": bt},
@@ -547,6 +535,8 @@ def main():
             else:
                 import lisbon
                 p.update(lisbon.value(pcfg, prev_props.get(key), STATUS, subs.get(key)))
+            if p.get("realtor_estimate") is None and (prev_props.get(key) or {}).get("realtor_estimate"):
+                p["realtor_estimate"] = prev_props[key]["realtor_estimate"]   # lookup failed: keep the last one seen
             STATUS[key] = "ok"
         except Exception as e:
             import traceback

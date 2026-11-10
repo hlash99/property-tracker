@@ -197,7 +197,7 @@ function runChange(p){
   const R=(p.runs||[]).filter(r=>r&&r.d&&r.v>0); if(R.length<2) return "";
   const cur=R[R.length-1], prev=R[R.length-2], t=ts(cur.d)-30*864e5;
   let old=null; for(const r of R){ if(ts(r.d)<=t) old=r; }
-  const f=(a,b)=>{const x=(a.v/b.v-1)*100; return `<b class="${Math.abs(x)<0.05?"":x>0?"up":"dn"}">${pct(x)}</b>`;};
+  const f=(a,b)=>{const x=(a.v/b.v-1)*100; return Math.abs(x)<0.05?"<b>unchanged</b>":`<b class="${x>0?"up":"dn"}">${pct(x)}</b>`;};
   return `Estimate vs last refresh (${MON[+prev.d.slice(5,7)-1]} ${+prev.d.slice(8,10)}): ${f(cur,prev)}`+(old&&old!==prev?` · vs 30 days ago: ${f(cur,old)}`:"");
 }
 function renderKPIs(){
