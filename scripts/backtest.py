@@ -29,7 +29,7 @@ def wquant(v, w, q):
     return float(v[o][min(np.searchsorted(c, q), len(v) - 1)])
 
 
-def holdout(d, feats, zq, w, n_q=8, min_train=150, min_test=3):
+def holdout(d, feats, zq, w, n_q=8, min_train=150, min_test=3, score_w=None, **fitkw):
     qs = sorted(d.q.unique())
     err, base, wt, sig, nq = [], [], [], [], 0
     for q in qs[-n_q:]:
@@ -37,14 +37,14 @@ def holdout(d, feats, zq, w, n_q=8, min_train=150, min_test=3):
         if tr.sum() < min_train or te.sum() < min_test:
             continue
         dtr, dte = d[tr], d[te]
-        m = H.fit(dtr, feats, zq[zq.index <= q], w[tr])            # tau for q comes from Zillow's change only
+        m = H.fit(dtr, feats, zq[zq.index <= q], w[tr], **fitkw)            # tau for q comes from Zillow's change only
         X = (dte[feats].to_numpy(float) - m["mu"]) / m["sd"]
         pred = X @ m["beta"] + m["tau"][q]
         err += list(np.log(dte.price.to_numpy(float)) - pred)
         yr = dtr[dtr.q >= q - 4]                                    # rule of thumb: last year's median $/sq ft
         ppsf = float(np.median(yr.price / yr.sqft)) if len(yr) else float(np.median(dtr.price / dtr.sqft))
         base += list(np.log(dte.price.to_numpy(float)) - np.log(ppsf * dte.sqft.to_numpy(float)))
-        wt += list(w[te])
+        wt += list((w if score_w is None else score_w)[te])
         sig += [m["sigma"]] * int(te.sum())
         nq += 1
     if len(err) < 20:
@@ -52,7 +52,7 @@ def holdout(d, feats, zq, w, n_q=8, min_train=150, min_test=3):
     err, base, wt, sig = map(np.array, (err, base, wt, sig))
     a = np.abs(err)
     return {"n": int(len(err)), "quarters": nq,
-            "bias": round(float(np.sum(wt * err) / wt.sum()), 4),
+            "bias": round(wquant(err, wt, 0.5), 4),               # median: one distressed sale shouldn't count as bias
             "mdae": round(wquant(a, wt, 0.5), 4), "mdae_ppsf": round(wquant(np.abs(base), wt, 0.5), 4),
             "q80": round(wquant(a, wt, 0.8), 4),
             "cover80": round(float(np.sum(wt * (a <= Z80 * sig)) / wt.sum()), 3),

@@ -343,6 +343,22 @@ def value_us(pcfg, subj, half_life, zl):
         bt["holdout"] = B.holdout(d, feats, zq, w)
         bt["repeat"] = B.repeat_sales(d, d.addr.map(addr_key), m["sigma"], half_life)
         log(f"  {key}: backtest {json.dumps(bt)}")
+        for nm, kw, ww, zz in [("lam15", dict(lam=15.0), w, zq), ("lam30", dict(lam=30.0), w, zq), ("lam120", dict(lam=120.0), w, zq),
+                               ("lam240", dict(lam=240.0), w, zq), ("ridge5", dict(ridge=5.0), w, zq), ("ridge0.2", dict(ridge=0.2), w, zq),
+                               ("noHuber", dict(iters=1), w, zq), ("huber8", dict(iters=8), w, zq),
+                               ("noZillow_lam60", {}, w, zq * 0 + 1.0), ("noZillow_lam15", dict(lam=15.0), w, zq * 0 + 1.0),
+                               ("uniform_w", {}, np.ones(len(w)), zq), ("w_sqrt", {}, np.sqrt(w), zq), ("w_sq", {}, w ** 2, zq)]:
+            h = B.holdout(d, feats, zz, ww, score_w=w, **kw)
+            # score every variant on the SAME (production) weights so they are comparable
+            log(f"  EXP {key} {nm}: " + json.dumps({k: h[k] for k in ("bias", "mdae", "q80", "cover80")}))
+        a_in = np.abs(d.res.to_numpy()); rec = (d.q >= sorted(d.q.unique())[-8]).to_numpy()
+        log(f"  EXP {key} in-sample all q80={B.wquant(a_in, w, .8):.4f} med={B.wquant(a_in, w, .5):.4f}; last8q q80={B.wquant(a_in[rec], w[rec], .8):.4f} "
+            f"med={B.wquant(a_in[rec], w[rec], .5):.4f} bias={B.wquant(d.res.to_numpy()[rec], w[rec], .5):.4f} n={int(rec.sum())} "
+            f"src_recent={d[rec].src.value_counts().to_dict()} near_w>=.3: n={int((w[rec] >= .3).sum())}")
+        for srcn in ("realtor", "redfin"):
+            mk = rec & (d.src == srcn).to_numpy()
+            if mk.sum() > 5:
+                log(f"  EXP {key} last8q {srcn}: med_res={np.median(d.res.to_numpy()[mk]):.4f} n={int(mk.sum())}")
     except Exception as e:
         log(f"  {key}: backtest failed {type(e).__name__}")
 
