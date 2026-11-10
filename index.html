@@ -192,6 +192,14 @@ function tickLabel(v){ const d=new Date(v); return TICKSPAN>2.5?String(d.getUTCF
 function mk(id,cfg){ if(charts[id]) charts[id].destroy(); charts[id]=new Chart(document.getElementById(id),cfg); return charts[id]; }
 
 /* ---------- KPI cards ---------- */
+/* how the published estimate itself moved: vs the previous refresh and vs ~30 days ago (native currency, nominal) */
+function runChange(p){
+  const R=(p.runs||[]).filter(r=>r&&r.d&&r.v>0); if(R.length<2) return "";
+  const cur=R[R.length-1], prev=R[R.length-2], t=ts(cur.d)-30*864e5;
+  let old=null; for(const r of R){ if(ts(r.d)<=t) old=r; }
+  const f=(a,b)=>{const x=(a.v/b.v-1)*100; return Math.abs(x)<0.05?"<b>unchanged</b>":`<b class="${x>0?"up":"dn"}">${pct(x)}</b>`;};
+  return `Estimate vs last refresh (${MON[+prev.d.slice(5,7)-1]} ${+prev.d.slice(8,10)}): ${f(cur,prev)}`+(old&&old!==prev?` · vs 30 days ago: ${f(cur,old)}`:"");
+}
 function renderKPIs(){
   const out=[]; let totUSD=0, tot0=0, totMonths=[];
   D.properties.forEach((p,i)=>{
@@ -205,11 +213,12 @@ function renderKPIs(){
     const xs=[]; (p.checks||[]).forEach(k=>xs.push(`${esc(k.label.replace(/ \(.*/,""))} ${money(conv(p,k.value,k.date.slice(0,7)),c)}`));
     if(p.realtor_estimate) xs.push(`realtor.com ${money(conv(p,p.realtor_estimate,mEnd),c)}`);
     const since=state.range==="all"?"since purchase "+mlabel(ts(S.m[0])):"last "+state.range+" yr";
+    const chg=runChange(p);
     out.push(`<div class="kpi"><div class="l"><i style="background:var(${COLOR[i]})"></i>${esc(p.icon)} ${esc(p.name)}</div>
       <div class="v">${money(v,c)}${p.ccy==="EUR"?` <span class="alt">${money(eurVal(S.v[n],mEnd),"EUR")}</span>`:""}</div><div class="r">80% range ${money(lo,c)} – ${money(hi,c)}</div>
       <div class="g ${r.total>=0?"up":"dn"}">${metricText(r)} <span class="r" style="font-weight:400">${since} · ${altText(r)}</span></div>
       ${p.ccy==="EUR"?`<div class="x">In euros: ${metricText(ret(eurVal(S.v[i0],m0),eurVal(S.v[n],mEnd),m0,mEnd))}. The dollar figure also moves with EUR/USD.</div>`:""}
-      ${bt}<div class="x">Cross-checks: ${xs.join(" · ")||"—"}</div></div>`);
+      ${bt}${chg?`<div class="x">${chg}</div>`:""}<div class="x">Cross-checks: ${xs.join(" · ")||"—"}</div></div>`);
   });
   // portfolio card (USD)
   const now=D.properties.map(p=>{const S=p.series,n=S.m.length-1;return realUSD(toUSD(p,S.v[n],S.m[n]),S.m[n]);}).reduce((a,b)=>a+b,0);
@@ -329,7 +338,14 @@ function renderProp(p,i){
   if(p.kind!=="flat"){
     const eff=Object.entries(M.effects||{}).map(([k,v])=>`${esc(k)} ${v>=0?"+":""}${(v*100).toFixed(1)}%`).join(" · ");
     const pe=M.peer||{};
-    $("#md-"+p.key).innerHTML=`<p>Fitted on <b>${M.n}</b> sales since ${esc(M.since)} (distance-weighted, robust). Typical error of a single sale vs the model: ±${Math.round((M.sigma||0)*100)}%. Effects (log points ≈ %): ${eff}. Size elasticity ${M.size_elasticity}.</p>
+    const B=M.backtest||{}, ho=B.holdout, rp=B.repeat, p0=v=>Math.round(v*100)+"%";
+    let chk="";
+    if(ho&&ho.n){ const better=ho.mdae<0.9*ho.mdae_ppsf;
+      chk=`<p><b>Out-of-sample check.</b> For each of the last ${ho.quarters} quarters the model was refitted on earlier sales only and asked to price that quarter's <b>${ho.n}</b> sales unseen: median miss ±${p0(ho.mdae)}, versus ±${p0(ho.mdae_ppsf)} for the rule of thumb “last year's median $/sq ft × size” – ${better?"the model is clearly better":"<b>no real improvement</b>, so here the model earns its keep only through this home's own known prices and peers, not the feature adjustments"}. 80% of unseen sales landed within ±${p0(ho.q80)}; the in-sample figure promised 80% within ±${p0(1.2816*(M.sigma||0))} and got ${p0(ho.cover80)}${M.sigma_band&&M.sigma_band>M.sigma+0.0005?`, so the range on the chart uses the wider out-of-sample spread (±${p0(M.sigma_band)} per sale, 1 sd)`:""}. Median miss direction ${pct(ho.bias*100,1)}.</p>`; }
+    if(rp){ chk+= rp.n>=15&&rp.mdae_fade!=null
+      ? `<p><b>Repeat-sale check</b> (${rp.n} nearby homes that sold twice, median ${rp.gap_years_median} yr apart): predicting the second sale from the model alone missed by ±${p0(rp.mdae_model_only)}; carrying the first sale's premium with the ${M.half_life_years}-yr fade used here, ±${p0(rp.mdae_fade)}; carrying it in full, ±${p0(rp.mdae_full_carry)}.</p>`
+      : `<p><b>Not yet testable:</b> pinning the line to the purchase price (and the ${M.half_life_years}-yr fade) can only be checked on nearby homes that sold twice, and the source lists just each home's latest sale (${rp.n||0} usable pair${rp.n===1?"":"s"}). Earlier sales are now kept between refreshes, so this check fills in as homes resell.</p>`; }
+    $("#md-"+p.key).innerHTML=`<p>Fitted on <b>${M.n}</b> sales since ${esc(M.since)} (distance-weighted, robust). Typical error of a single sale vs the model: ±${Math.round((M.sigma||0)*100)}%. Effects (log points ≈ %): ${eff}. Size elasticity ${M.size_elasticity}.</p>${chk}
       <p>This home's own premium vs a typical home with its features: ${(p.anchors||[]).map(a=>`${esc(a.label)} ${mlabel(ts(a.date))}: ${money(a.value,p.ccy)} vs typical ${money(a.model_typical,p.ccy)} (${pct((a.value/a.model_typical-1)*100,0)})`).join("; ")}.
       Peers (${esc(pe.label||"")}, ${pe.n||0} sales): ${pct((pe.premium||0)*100,1)}. The purchase premium fades toward the peer premium with a ${M.half_life_years}-yr half-life; now ${pct((M.resid_now||0)*100,1)}.</p>
       <p>*“As this home, today” = the sale price adjusted by the model for every difference in features, moved to today with the local index, plus this home's premium.</p>`;
@@ -341,10 +357,10 @@ function renderProp(p,i){
 function renderMethod(){
   $("#method").innerHTML=`
   <li><b>Why not Zestimate / Redfin Estimate.</b> They're national black boxes and disagree (Menlo: Redfin $1.90M vs realtor.com $2.59M). They're shown only as cross-check triangles.</li>
-  <li><b>US homes: local hedonic model.</b> ~10 years of sold records within ~¾–1 mile (realtor.com, plus Redfin for the latest year) → log price explained by size, lot, beds/baths, age, condition words in the listing remarks (remodeled / fixer / view / TIC), building size, city and position, plus one effect per quarter. The quarterly effects are a local sales index, pulled toward Zillow's ZHVI only where a quarter has few sales.</li>
+  <li><b>US homes: local hedonic model.</b> ~10 years of sold records within ~¾–1 mile (realtor.com, plus Redfin for the latest year) → log price explained by size, lot, beds/baths, age, condition words in the listing remarks (remodeled / fixer / view / TIC), building size, city and position, plus one effect per quarter and one for records only Redfin has (a cheaper mix of homes that exists only in the latest year and would otherwise drag the recent trend down). The quarterly effects are a local sales index, pulled toward Zillow's ZHVI only where a quarter has few sales.</li>
   <li><b>Pinned to what this home actually traded for.</b> The purchase price (and SF's 2020 refi appraisal, at half weight) tells the model how this home differs from a typical one with the same features. That premium is carried forward and fades with a 10-year half-life toward the premium of its closest peers: hand-picked same-view units for SF, the immediate blocks for Menlo. A lasting edge like a view therefore persists, and one-off luck at purchase does not.</li>
-  <li><b>Range</b> = 80% interval: the model's uncertainty in the local index plus the share of a single home's idiosyncratic premium that its own known prices no longer pin down. It's narrow on the purchase date and widens with time.</li>
-  <li><b>Lisbon</b> (Portugal has no public sale-by-address records): the <i>level</i> is Statistics Portugal's (INE) median €/m² of T3 flats actually <b>sold</b> in Arroios (tax records, 12-month rolling); month-to-month <i>movement</i> comes from INE's bank-appraisal median for Lisbon apartments. The 2021 purchase premium over a typical T3 (part renovation and lift, part the Golden-Visa rush before Lisbon's residential route closed in Jan 2022) fades with a 4-yr half-life toward the premium of today's renovated, lift-served listings nearby on imovirtual, taken at asking minus a 7% asking-to-sale gap.</li>
+  <li><b>Range</b> = 80% interval: the model's uncertainty in the local index plus the share of a single home's idiosyncratic premium that its own known prices no longer pin down. It's narrow on the purchase date and widens with time. The per-sale spread behind it is checked each refresh on sales the model has not seen (see “Model details”) and widened when unseen sales scatter more than the fit suggests.</li>
+  <li><b>Lisbon</b> (Portugal has no public sale-by-address records): the <i>level</i> is Statistics Portugal's (INE) median €/m² of T3 flats actually <b>sold</b> in Arroios (tax records, 12-month rolling); month-to-month <i>movement</i> comes from INE's bank-appraisal median for Lisbon apartments. The 2021 purchase premium over a typical T3 (part renovation and lift, part the Golden-Visa rush before Lisbon's residential route closed in Jan 2022) fades with a 4-yr half-life toward the premium of today's renovated, lift-served listings nearby on imovirtual, taken at asking minus a 7% asking-to-sale gap. Listings are counted once per flat (the same flat is often advertised by several agents) and pooled over 90 days, so one advert appearing or vanishing can't swing the value. Its range includes the measured error of bridging INE's ~11-month lag.</li>
   <li><b>Inflation-adjusted</b> converts every month to today's money: US CPI-U for dollars, Portugal HICP for euros. CAGR and total % use the selected window. <b>Benchmarks</b> put the home's value at the start of the window into the S&amp;P 500 or AAPL (total return, dividends reinvested) over the same dates. The homes' figures are price only: no rent, no mortgage leverage, no tax/HOA/upkeep.</li>
   <li><b>Not published:</b> street addresses and coordinates (kept in a GitHub secret); comp distances are shown only as bands.</li>`;
 }
